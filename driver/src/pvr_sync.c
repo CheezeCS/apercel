@@ -167,7 +167,7 @@ int
 pvr_sync_signal_array_update_fences(struct xarray *array,
 				    u32 sync_op_count,
 				    const struct drm_pvr_sync_op *sync_ops,
-				    struct dma_fence *done_fence)
+				    struct dma_fence *finished_fence)
 {
 	u32 i;
 	for (i = 0; i < sync_op_count; i++) {
@@ -183,7 +183,7 @@ pvr_sync_signal_array_update_fences(struct xarray *array,
 			return -EINVAL;
 
 		old_fence = sig_sync->fence;
-		sig_sync->fence = dma_fence_get(done_fence);
+		sig_sync->fence = dma_fence_get(finished_fence);
 		dma_fence_put(old_fence);
 
 		if (WARN_ON(!sig_sync->fence))
