@@ -16,6 +16,7 @@
 #include "pvr_rogue_fwif_client.h"
 
 #define MAX_DEADLINE_MS 30000
+#define SCHED_TIMEOUT_PERIOD (2 * MAX_DEADLINE_MS)
 
 #define CTX_COMPUTE_CCCB_SIZE_LOG2 15
 #define CTX_FRAG_CCCB_SIZE_LOG2 15
@@ -1393,7 +1394,7 @@ struct pvr_queue *pvr_queue_create(struct pvr_context *ctx,
 
 	err = drm_sched_init(&queue->scheduler,
 			     &pvr_queue_sched_ops,
-			     64 * 1024, 1, msecs_to_jiffies(500),
+			     64 * 1024, 1, msecs_to_jiffies(SCHED_TIMEOUT_PERIOD),
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(6, 0, 0))
 			     pvr_dev->sched_wq, NULL, "pvr-queue",
 			     pvr_dev->base.dev);
