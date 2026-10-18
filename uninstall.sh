@@ -80,8 +80,24 @@ fi
 
 $SUDO depmod -a || fail "depmod -a failed"
 
-# --------------------------------------------------- remove CPU-governor hooks
+# Remove CPU-governor hooks - only the files created by install.sh tier.
+# --------------------------------------------------- remove memory tuning
 # Only the files created by install.sh are touched.
+if [ -f /usr/local/sbin/apercel-memory-tune ] || [ -f /etc/local.d/apercel-memory-tune.start ] || [ -f /etc/systemd/system/apercel-memory-tune.service ]; then
+    if [ -d /run/systemd/system ]; then
+        $SUDO systemctl disable --now apercel-memory-tune 2>/dev/null
+        $SUDO rm -f /etc/systemd/system/apercel-memory-tune.service
+        $SUDO systemctl daemon-reload 2>/dev/null
+        $SUDO swapoff /dev/zram0 2>/dev/null
+    fi
+    $SUDO rm -f /etc/local.d/apercel-memory-tune.start
+    $SUDO rm -f /usr/local/sbin/apercel-memory-tune
+    if [ -f /etc/rc.local ]; then
+        $SUDO sed -i '/# >>> apercel memory-tune <<</,# <<< apercel memory-tune <<</d' /etc/rc.local 2>/dev/null
+    fi
+fi
+
+# --------------------------------------------------- remove CPU-governor hooks
 if [ -d /run/systemd/system ] && [ -f /etc/systemd/system/gpu-cpu-perf.service ]; then
     log "removing CPU governor unit /etc/systemd/system/gpu-cpu-perf.service"
     $SUDO systemctl disable --now gpu-cpu-perf 2>/dev/null

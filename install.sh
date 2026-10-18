@@ -178,6 +178,86 @@ else
     log "no supported init system found for CPU governor persistence"
 fi
 
+# ---------------------------------------------- 3b. memory tuning (zram swap)
+# Memory-heavy applications (Factorio Space Age, browser- Atlas) exhaust the
+# 6 GB physical RAM and start thrashing the UFS-backed swap file, which
+# shows up as FPS death. zram (compressed RAM) with zstd gives ~2.5-3x
+# effective RAM and orders of magnitude faster "swap" than UFS. Installed
+# for all init systems as a single helper script + trivial hooks.
+MEMORY_SCRIPT=/usr/local/sbin/apercel-memory-tune
+
+memory_script_body() {
+    cat >"$1" <<'APEX_MEM'
+#!/bin/bash
+# apercel memory tuning helper
+# - create zram swap (zstd) when absent
+# - prioritise zram over file swap
+# - kernel knobs friendly to compressed swap
+MEM_BYTES=4294967296   # 4 GiB zram volume.
+
+modprobe zram 2>/dev/null || true
+if [ -e /dev/zram0 ] && [ "$(cat /sys/block/zram0/disksize 2>/dev/null)" = "0" ]; then
+    echo "$MEM_BYTES" > /sys/block/zram0/disksize
+    mkswap /dev/zram0
+    swapon -p 5 /dev/zram0
+fi
+
+sysctl -w vm.swappiness=100 >/dev/null 2>&1
+sysctl -w vm.page-cluster=0 >/dev/null 2>&1
+APEX_MEM
+}
+
+if [ "${APERCEL_SKIP_MEMORY_TUNE:-0}" = "1" ] || [ "${APERCEL_SKIP_CPU_PERF:-0}" = "1" ]; then
+    log "memory tuning skipped via APERCEL_SKIP_*"
+else
+    log "installing memory tuning helper: $MEMORY_SCRIPT"
+    memory_script_body /tmp/apercel-memory-tune.$$
+    $SUDO cp /tmp/apercel-memory-tune.$$ "$MEMORY_SCRIPT" || fail "install of memory tuning helper failed"
+    rm -f /tmp/apercel-memory-tune.$$
+    $SUDO chmod +x "$MEMORY_SCRIPT" || true
+
+    if [ -d /run/systemd/system ]; then
+        if [ "$($SUDO systemctl is-enabled apercel-memory-tune 2>/dev/null)" != "enabled" ]; then
+            log "installing memory tuning unit: /etc/systemd/system/apercel-memory-tune.service"
+            $SUDO tee /etc/systemd/system/apercel-memory-tune.service >/dev/null <<'APEX_UNIT2'
+[Unit]
+Description=apercel: zram swap and memory tuning
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/apercel-memory-tune
+[Install]
+WantedBy=multi-user.target
+APEX_UNIT2
+            $SUDO systemctl daemon-reload || true
+            $SUDO systemctl enable apercel-memory-tune || true
+        else
+            log "memory tuning unit already installed and enabled, nothing to do"
+        fi
+    elif [ -d /run/openrc ]; then
+        if [ -x /etc/local.d/apercel-memory-tune.start ]; then
+            log "/etc/local.d/apercel-memory-tune.start already present, nothing to do"
+        else
+            printf '#!/bin/bash\n/usr/local/sbin/apercel-memory-tune\n' | \
+                $SUDO tee /etc/local.d/apercel-memory-tune.start >/dev/null
+            $SUDO chmod +x /etc/local.d/apercel-memory-tune.start
+        fi
+    elif [ -f /etc/rc.local ] || [ -d /etc/runit ]; then
+        if [ -f /etc/rc.local ] && grep -q "apercel memory-tune" /etc/rc.local; then
+            log "/etc/rc.local already hooks memory tuning, nothing to do"
+        else
+            {
+                printf '\n# >>> apercel memory-tune <<<\n'
+                printf '/usr/local/sbin/apercel-memory-tune\n'
+                printf '# <<< apercel memory-tune <<<\n'
+            } > /tmp/apercel-rclocal-memory.$$
+            $SUDO sh -c "cat /tmp/apercel-rclocal-memory.$$ >> /etc/rc.local"
+            rm -f /tmp/apercel-rclocal-memory.$$
+        fi
+    else
+        log "no supported init system found for memory tuning persistence"
+    fi
+fi
+
 # ------------------------------------------------------------------- 4. verification
 log "verifying installed state"
 modinfo -F license "$MODULE_DIR/apercel.ko" | grep -q "GPL v2" || fail "apercel.ko license is not 'GPL v2'"
