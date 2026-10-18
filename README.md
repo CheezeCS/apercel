@@ -51,8 +51,24 @@ the reference install ran on Gentoo aarch64, sway compositor):
 | waybar                           | works                     | status bar                                           |
 | Helium browser (Chromium-based)  | works                     | GPU accelerated                                      |
 | Mindustry                        | works                     | 45–50 fps in a live game                             |
-| Factorio Space Age               | runs                      | roughly 10–19 fps, playable-ish                      |
-| Vesktop (Electron, Discord)      | does not start            | no workaround found yet                              |
+| Factorio Space Age               | runs                      | ~22 fps windowed, ~16 fullscreen (see below)          |
+| Vesktop (Electron, Discord)      | does not start            | no workaround found yet                               |
+
+Factorio performance notes (all measured with `--benchmark-graphics`):
+
+- `streamed-atlas-physical-vram-size=32` is required (see troubleshooting:
+  black squares otherwise); `texture-streaming` must stay enabled — with
+  `false` the whole atlas is resident (~1.3 GB) and the process OOMs on a
+  6 GiB board;
+- the frame is capped by a fixed ~40 ms present/sync cost of the GPU
+  submission path (measured identical at 128x128 and 1024x600 window),
+  texture resolution and window size change it little;
+- `mesa_gl_thread=true` (drirc option, enabled by the install via
+  `~/.config/drirc`/`$XDG_CONFIG_HOME/drirc` or a per-game env var)
+  moves GL submission off the main thread: +5 fps (16 → ~22); it also
+  speeds up other CPU-bound GL applications;
+- windowed mode (~22 fps) renders faster than fullscreen (~16 fps) on
+  this GPU (fullscreen fence path is slower).
 
 Everything else that is not listed has not been tried.
 
