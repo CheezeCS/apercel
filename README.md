@@ -283,3 +283,10 @@ This project builds on:
 - the Orange Pi 4 Pro BSP kernel (orange-pi-6.6-sun60iw2) for SoC
   integration;
 - linux-firmware for the open firmware image build.
+
+## Credits
+
+This project was inspired by the repository
+[8borane8/retrorangepi4pro](https://github.com/8borane8/retrorangepi4pro)
+— seeing that the community behind this hardware was alive is what made me
+start working on the driver.
