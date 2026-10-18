@@ -99,7 +99,78 @@ for f in "$BACKUP_DIR"/*.ko "$CONF_BAK_DIR"/*.conf; do
     $SUDO chown "$(id -u):$(id -g)" "$f" 2>/dev/null
 done
 
-# ------------------------------------------------------------- 4. verification
+# ---------------------------------------------- 3a. CPU governor persistence
+# Screen-update stalls trace back to the schedutil CPU governor hopping
+# between ~400 MHz and max rates; keep both clusters pinned to 'performance'
+# at boot. Init system is detected; the setup is idempotent.
+cpu_perf_hook() {
+    cat >"$1" <<'APEX_EOF'
+#!/bin/bash
+# apercel CPU governor fix: pin the compositor CPUs to the performance OPP.
+for policy in /sys/devices/system/cpu/cpufreq/policy*; do
+    echo performance > "$policy/scaling_governor" 2>/dev/null
+done
+APEX_EOF
+}
+
+if [ "${APERCEL_SKIP_CPU_PERF:-0}" = "1" ]; then
+    log "APERCEL_SKIP_CPU_PERF=1: skipping the CPU governor persistence setup"
+elif [ ! -d /run/openrc ] && [ ! -d /run/systemd/system ]; then
+    log "init system not detected: skipping CPU governor persistence setup"
+    log "(see README 'The CPU governor fix' and add the hook manually)"
+elif [ -d /run/systemd/system ]; then
+    # systemd is running (Debian, Fedora, Arch, and most others)
+    if [ "$($SUDO systemctl is-enabled gpu-cpu-perf 2>/dev/null)" != "enabled" ]; then
+        log "installing CPU governor unit: /etc/systemd/system/gpu-cpu-perf.service"
+        $SUDO tee /etc/systemd/system/gpu-cpu-perf.service >/dev/null <<'APEX_UNIT'
+[Unit]
+Description=apercel: pin the CPU performance governor for the compositor
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'for p in /sys/devices/system/cpu/cpufreq/policy*; do echo performance > "$p/scaling_governor"; done'
+
+[Install]
+WantedBy=multi-user.target
+APEX_UNIT
+        $SUDO systemctl daemon-reload || fail "systemctl daemon-reload failed"
+        $SUDO systemctl enable gpu-cpu-perf || fail "systemctl enable gpu-cpu-perf failed"
+    else
+        log "CPU governor unit already installed and enabled, nothing to do"
+    fi
+elif [ -d /run/openrc ]; then
+    # OpenRC (Gentoo, Artix)
+    if [ -x /etc/local.d/gpu-cpu-perf.start ]; then
+        log "/etc/local.d/gpu-cpu-perf.start already present, nothing to do"
+    else
+        log "installing CPU governor hook: /etc/local.d/gpu-cpu-perf.start"
+        cpu_perf_hook /tmp/gpu-cpu-perf.start.$$
+        $SUDO cp /tmp/gpu-cpu-perf.start.$$ /etc/local.d/gpu-cpu-perf.start || fail "install of gpu-cpu-perf.start failed"
+        rm -f /tmp/gpu-cpu-perf.start.$$
+        $SUDO chmod +x /etc/local.d/gpu-cpu-perf.start || fail "chmod of gpu-cpu-perf.start failed"
+    fi
+    $SUDO rc-update add local default 2>/dev/null || true   # enable 'local' service
+elif [ -f /etc/rc.local ] || [ -d /etc/runit ]; then
+    # runit / Void (also general rc.local path)
+    if [ -f /etc/rc.local ] && grep -q "apercel cpu-governor" /etc/rc.local; then
+        log "/etc/rc.local already hooks the CPU governor, nothing to do"
+    else
+        log "appending CPU governor hook to /etc/rc.local (marker-guarded)"
+        {
+            printf '\n# >>> apercel cpu-governor <<<\n'
+            printf 'for policy in /sys/devices/system/cpu/cpufreq/policy*; do\n'
+            printf '    echo performance > "$policy/scaling_governor" 2>/dev/null\n'
+            printf 'done\n'
+            printf '# <<< apercel cpu-governor <<<\n'
+        } > /tmp/apercel-rclocal.append.$$
+        $SUDO sh -c "cat /tmp/apercel-rclocal.append.$$ >> /etc/rc.local" || fail "append to /etc/rc.local failed"
+        rm -f /tmp/apercel-rclocal.append.$$
+    fi
+else
+    log "no supported init system found for CPU governor persistence"
+fi
+
+# ------------------------------------------------------------------- 4. verification
 log "verifying installed state"
 modinfo -F license "$MODULE_DIR/apercel.ko" | grep -q "GPL v2" || fail "apercel.ko license is not 'GPL v2'"
 grep -q "alias of:N\*T\*Cimg,gpu " "/lib/modules/$KERNEL_VERSION/modules.alias" >/dev/null 2>&1 || \
@@ -115,7 +186,8 @@ if [ "$AUTO_REBOOT" -eq 1 ]; then
     $SUDO reboot
 else
     printf '[install] install finished. Reboot now? [y/N]: '
-    read -r answer </dev/tty
+    answer=""
+    read -r answer </dev/tty 2>/dev/null || read -r answer 2>/dev/null || true
     case "$answer" in
         y|Y)
             log "rebooting (module binds the GPU on the next boot)"

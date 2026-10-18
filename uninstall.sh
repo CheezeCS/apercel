@@ -80,9 +80,27 @@ fi
 
 $SUDO depmod -a || fail "depmod -a failed"
 
+# --------------------------------------------------- remove CPU-governor hooks
+# Only the files created by install.sh are touched.
+if [ -d /run/systemd/system ] && [ -f /etc/systemd/system/gpu-cpu-perf.service ]; then
+    log "removing CPU governor unit /etc/systemd/system/gpu-cpu-perf.service"
+    $SUDO systemctl disable --now gpu-cpu-perf 2>/dev/null
+    $SUDO rm -f /etc/systemd/system/gpu-cpu-perf.service
+    $SUDO systemctl daemon-reload 2>/dev/null
+fi
+if [ -f /etc/local.d/gpu-cpu-perf.start ]; then
+    log "removing CPU governor hook /etc/local.d/gpu-cpu-perf.start"
+    $SUDO rm -f /etc/local.d/gpu-cpu-perf.start
+fi
+if [ -f /etc/rc.local ] && grep -q "apercel cpu-governor" /etc/rc.local; then
+    log "removing CPU governor hook from /etc/rc.local"
+    $SUDO sed -i '/# >>> apercel cpu-governor <<</,/apercel cpu-governor <<</d' /etc/rc.local
+fi
+
 log "uninstall finished. Reboot to apply."
 printf '[uninstall] Reboot now? [y/N]: '
-read -r answer </dev/tty
+answer=""
+read -r answer </dev/tty 2>/dev/null || read -r answer 2>/dev/null || true
 case "$answer" in
     y|Y) $SUDO reboot ;;
     *)   log "no reboot. Applied on the next boot." ;;
