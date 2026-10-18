@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: Lint (shell, patch, checksums)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shell syntax check
+        run: |
+          for f in install.sh uninstall.sh tools/*.sh; do
+            bash -n "$f"
+          done
+
+      - name: Mesa patch checksum
+        run: |
+          cd mesa
+          echo "$(cat apercel-mesa.patch.sha256)  apercel-mesa.patch" | sha256sum -c -
+
+      - name: Mesa patch applies cleanly (dry-run)
+        run: |
+          curl -so mesa.tar.xz https://archive.freedesktop.org/pub/mesa/26.1.8/mesa-26.1.8.tar.xz
+          tar -xf mesa.tar.xz
+          cd mesa-26.1.8
+          set -o pipefail
+          patch -p1 -u --dry-run --forward < ../mesa/apercel-mesa.patch > /tmp/apply.log 2>&1
+          ! grep -qE "FAILED|malformed|reject" /tmp/apply.log
+
+      - name: Verify no accidentally tracked build artifacts
+        run: |
+          test -z "$(git ls-files '*' | grep -E '\.(o|ko|mod|cmd)$|Module\.symvers|modules\.order')" || {
+            echo "build artifacts tracked in git:"; git ls-files | grep -E '\.(o|ko|mod|cmd)$';
+            exit 1; }
+
+  kernel-module:
+    name: Build apercel.ko (aarch64 cross, orange-pi-6.6-sun60iw2 kernel)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cross toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-aarch64-linux-gnu bc bison flex libssl-dev libelf-dev build-essential
+
+      - name: Fetch the BSP kernel tree
+        run: |
+          git clone --depth 1 --branch orange-pi-6.6-sun60iw2 --single-branch \
+            https://github.com/orangepi-xunlong/linux-orangepi.git
+
+      - name: Configure the kernel (arm64 generic + DRM helpers)
+        run: |
+          cd linux-orangepi
+          make O=kb ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
+          ./scripts/config --file kb/.config \
+            --enable CONFIG_DRM \
+            --enable CONFIG_DRM_EXEC \
+            --enable CONFIG_DRM_GEM_SHMEM_HELPER \
+            --enable CONFIG_DRM_SCHED \
+            --enable CONFIG_DEBUG_FS
+          make O=kb ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+
+      - name: Prepare the kernel tree
+        run: |
+          cd linux-orangepi
+          make O=kb ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules_prepare -j"$(nproc)"
+
+      - name: Build the DRM helpers so their symbols exist
+        run: |
+          cd linux-orangepi
+          make O=kb ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- M=drivers/gpu/drm modules -j"$(nproc)"
+          ls -la kb/drivers/gpu/drm/Module.symvers
+
+      - name: Build the apercel module (zero warnings required)
+        run: |
+          SYMVERS="$PWD/linux-orangepi/kb/drivers/gpu/drm/Module.symvers"
+          test -f "$SYMVERS"
+          set -o pipefail
+          make -C linux-orangepi O=kb ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+            M="$GITHUB_WORKSPACE/driver" DRM_SYMVERS="$SYMVERS" modules -j"$(nproc)" \
+            2>&1 | tee build.log
+          ! grep -iE "\bwarning\b|error" build.log
+
+      - name: Upload kernel module artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: apercel-ko
+          path: driver/apercel.ko
