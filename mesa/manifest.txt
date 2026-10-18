@@ -1,0 +1,41 @@
+# apercel Mesa component - modified files
+#
+# This manifest covers the diff held in apercel-mesa.patch (vanilla
+# mesa-26.1.8 -> the apercel tree). Every change is ours unless noted
+# otherwise; upstream files keep their own MIT/X11 notices.
+
+pvr_device.c            680  load-op program cache: key fill/hash/equal,
+                             entry storage (with compile outputs), LRU
+                             eviction, insert/get/release/init/fini, debug
+                             hooks and environment gates (PVR_LOADOP_NOCACHE,
+                             PVR_LOADOP_DEBUG)
+pvr_arch_cmd_buffer.c   301  render job state upload consuming the load-op
+                             cache; pack path reads the cached
+                             const_shareds_count, shareds_count and
+                             num_tile_buffers restorations
+pvr_physical_device.c   259  physical device enumeration fixes; alignment with
+                             the open-source kernel driver ABI
+pvr_device.h            106  load-op cache structures and declarations
+                             (key struct, entry struct, API entry points)
+pvr_arch_pipeline.c      94  pipeline state caching and retrieval around the
+                             new load-op API
+pvr_arch_mrt.c           52  load-op shader generate wrapper: pass-key-through
+                             (build once, pass to get and insert), NOCACHE
+                             gate, vk_zalloc allocation fix
+pvr_arch_queue.c         48  queue submission touch-ups required by the cache
+pvr_arch_job_render.c    41  render job bookkeeping around the new cache
+pvr_arch_device.c        23  device init and fini of the load-op cache
+pvr_bo.c                 19  buffer object lifecycle guards
+pvr_arch_job_transfer.c  18  transfer job bookkeeping around the new cache
+pvr_queue.h               8  queue declarations refresh
+pvr_job_render.h          8  render job declarations refresh
+pvr_arch_pass.c           8  finish of the load-op on the render-pass path
+pvr_framebuffer.h         7  framebuffer declarations refresh
+pvr_mrt.h                 6  load-op cache entry in the per-attachment
+                             struct
+pvr_arch_job_compute.c    6  compute job bookkeeping around the new cache
+pvr_job_transfer.h        4  transfer job declarations refresh
+pvr_job_compute.h         4  compute job declarations refresh
+pvr_winsys.h              4  renderer identity: PVR_DRM_DRIVER_NAME set to
+                             "apercel" to match the open-source kernel
+                             driver ("powevr" upstream)

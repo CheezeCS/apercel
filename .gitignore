@@ -1,0 +1,16 @@
+# Build artifacts
+*.o
+*.ko
+*.mod
+*.mod.c
+modules.order
+Module.symvers
+.*.cmd
+.tmp/
+
+# Local build/run artifacts (created by install.sh / builds on the target)
+backup/
+*.fw
+
+# Worklogs - kept locally, not published
+REPORT-*.md
