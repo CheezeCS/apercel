@@ -296,6 +296,29 @@ To revert at runtime: `echo schedutil > .../scaling_governor` for each
 policy, and disable/remove the persistence piece above if you want
 battery-oriented behavior instead.
 
+## Memory tuning for big games
+
+Boards with 6-8 GiB RAM hit the OOM killer quickly when a heavy native
+title (Factorio Space Age ~6 GiB of anonymous memory) runs next to a
+compositor. The helper `/usr/local/sbin/apercel-memory-tune` (written by
+`install.sh`) sets this up at boot:
+
+1. **zram swap, 8 GiB, zstd compression, priority 5** — anonymous pages
+   go to compressed RAM first (compression is ~5x here for the game's
+   working set, so 6 GiB of application data costs ~1.5-3 GiB of
+   resident memory);
+2. **an existing file/network swap is left untouched with a lower
+   priority** — it only fills if zram is exhausted;
+3. `vm.swappiness=100`, `vm.page-cluster=0`, `vm.watermark_scale_factor=125`
+   so reclaim prefers swap-out instead of stalling.
+
+Measured under load (~7 GiB anonymous churn): zram filled steadily,
+the system stayed interactive, no OOM.
+
+To clean up: run each value back (`swapoff /dev/zram0 && zramctl -r
+/dev/zram0`, remove the helper and persistence hook from
+`uninstall.sh`).
+
 ## Troubleshooting
 
 Common problems and fixes, in the order they typically appear:
