@@ -284,6 +284,14 @@ is enabled (`rc-update add local default`).
 runit (Void) — put the loop into `/etc/rc.local`; Void runs it from its
 runit rc-local job at boot.
 
+The hook (written by `install.sh`) does two things at boot:
+
+1. pins both CPU clusters to the `performance` governor (compositor
+   latency after frequency hops measured ~1 s);
+2. routes the GPU IRQ line (`IRQGPU` in `/proc/interrupts`) to the last
+   (biggest) cores of the big.LITTLE layout — submit latency improves
+   measurably (`grep IRQGPU /proc/interrupts` to verify afterwards).
+
 To revert at runtime: `echo schedutil > .../scaling_governor` for each
 policy, and disable/remove the persistence piece above if you want
 battery-oriented behavior instead.

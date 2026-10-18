@@ -110,6 +110,14 @@ cpu_perf_hook() {
 for policy in /sys/devices/system/cpu/cpufreq/policy*; do
     echo performance > "$policy/scaling_governor" 2>/dev/null
 done
+# Route GPU IRQs to the last (biggest) cores of a big.LITTLE board where
+# the IRQ line matches 'IRQGPU' in /proc/interrupts; reduces submit latency.
+# Failures are ignored: not every board has a matching IRQ line name.
+grep IRQGPU /proc/interrupts 2>/dev/null | while read -r irq _rest; do
+    irqn=${irq%%:*}
+    ncpu=$(( $(nproc) - 1 ))
+    echo "$ncpu" >"/proc/irq/$irqn/smp_affinity_list" 2>/dev/null
+done
 APEX_EOF
 }
 
@@ -140,15 +148,15 @@ APEX_UNIT
     fi
 elif [ -d /run/openrc ]; then
     # OpenRC (Gentoo, Artix)
-    if [ -x /etc/local.d/gpu-cpu-perf.start ]; then
-        log "/etc/local.d/gpu-cpu-perf.start already present, nothing to do"
+    cpu_perf_hook /tmp/gpu-cpu-perf.start.$$
+    if [ -x /etc/local.d/gpu-cpu-perf.start ] && [ "$($SUDO md5sum /etc/local.d/gpu-cpu-perf.start | cut -d' ' -f1)" = "$(md5sum /tmp/gpu-cpu-perf.start.$$ | cut -d' ' -f1)" ]; then
+        log "/etc/local.d/gpu-cpu-perf.start already up to date, nothing to do"
     else
         log "installing CPU governor hook: /etc/local.d/gpu-cpu-perf.start"
-        cpu_perf_hook /tmp/gpu-cpu-perf.start.$$
         $SUDO cp /tmp/gpu-cpu-perf.start.$$ /etc/local.d/gpu-cpu-perf.start || fail "install of gpu-cpu-perf.start failed"
-        rm -f /tmp/gpu-cpu-perf.start.$$
         $SUDO chmod +x /etc/local.d/gpu-cpu-perf.start || fail "chmod of gpu-cpu-perf.start failed"
     fi
+    rm -f /tmp/gpu-cpu-perf.start.$$
     $SUDO rc-update add local default 2>/dev/null || true   # enable 'local' service
 elif [ -f /etc/rc.local ] || [ -d /etc/runit ]; then
     # runit / Void (also general rc.local path)
