@@ -1,8 +1,9 @@
 # apercel
 
 Open-source GPU support for the Imagination BXM-4-64 GPU (PowerVR Rogue
-family, BVNC 36.56.104.183) built into the Allwinner A733 SoC, on
-Gentoo aarch64.
+family, BVNC 36.56.104.183) built into the Allwinner A733 SoC. Written on
+Gentoo aarch64; the instructions below cover Debian, Fedora, Arch, Void
+and Gentoo alike.
 
 The name comes from Latin *aperio* ("to open") plus *celer* ("fast"): an
 open driver with the clock raised.
@@ -39,7 +40,8 @@ in a live Mindustry game.
 
 ## What runs
 
-Programs tested on the Orange Pi 4 Pro (Gentoo aarch64, sway compositor):
+Programs tested on the Orange Pi 4 Pro (the stack itself is distro-agnostic;
+the reference install ran on Gentoo aarch64, sway compositor):
 
 | Program                          | Status                    | Notes                                                |
 |----------------------------------|---------------------------|------------------------------------------------------|
@@ -88,19 +90,66 @@ repository.
 
 ## Install
 
-Useful environment facts for the recipe below: the reference system is
-Gentoo aarch64 on the Orange Pi 4 Pro, kernel 6.6.98-sun60iw2 (the
-"orange-pi-6.6-sun60iw2" BSP tree with the out-of-tree build directory
-`kernelbuild/` inside the kernel source root), OpenRC init, and any compositor
-or display server. The steps assume a running Linux; adjust paths to your
-system where needed.
+The instructions below are distro-agnostic and were tested on the
+reference system: Gentoo aarch64 on the Orange Pi 4 Pro, kernel
+6.6.98-sun60iw2 (the "orange-pi-6.6-sun60iw2" BSP tree with an
+out-of-tree build directory `kernelbuild/` inside the kernel source root),
+OpenRC init, and a sway compositor. On Debian, Fedora, Arch, Void or any
+other distribution everything works the same — the only distro-specific
+parts are the package manager commands (below), the boot-time persistence
+of the CPU governor snippet, and whether `doas` or `sudo` is your root
+helper. Adjust paths to your system where needed.
+
+### 0. Build dependencies
+
+Both components are built from source; you need a compiler toolchain,
+meson/ninja and a few development libraries. Everything installs as
+regular packages, nothing is distro-specific beyond the package names.
+Run only the block for your distribution:
+
+Debian / Ubuntu (names may vary slightly between releases):
+
+    sudo apt install build-essential meson ninja-build python3 python3-mako \
+        flex bison pkg-config zlib1g-dev libdrm-dev libglslang-dev \
+        libclc-dev libvulkan-dev
+
+Fedora:
+
+    sudo dnf install -y gcc make meson ninja-build python3 python3-mako \
+        flex bison pkgconf zlib-devel libdrm-devel glslang-devel \
+        libclc-devel vulkan-headers
+
+Arch / Artix:
+
+    sudo pacman -S --needed base-devel meson ninja python-mako \
+        libdrm glslang libclc vulkan-headers zlib
+
+Void:
+
+    sudo xbps-install -S base-devel meson ninja python3-Mako \
+        libdrm-devel glslang libclc zlib-devel
+
+Gentoo:
+
+    sudo emerge --ask sys-devel/gcc sys-devel/make dev-util/meson \
+        dev-util/ninja dev-python/mako sys-devel/flex sys-devel/bison \
+        dev-util/pkgconf media-libs/libdrm dev-util/glslang \
+        llvm-runtimes/libclc media-libs/vulkan-headers
+
+(For `-Dmesa-clc=system` a recent system `glslang` and `libclc` are
+required; on older releases either upgrade them, or configure Mesa with
+`-Dmesa-clc=builtin` instead, which builds the bundled compiler and needs
+no extra system dependency.)
 
 ### 1. Kernel and helpers
 
 Prerequisites: a configured kernel tree for your A733 board with an
 out-of-tree build directory (called `kernelbuild/` below, produced by
-`make O=kernelbuild` from the kernel source). The three helper modules are
-built from the same tree:
+`make O=kernelbuild` from the kernel source). Note: a stock distro kernel
+does not contain the A733 SoC support — you need the Allwinner BSP kernel
+for your board anyway. The examples below use `doas`; substitute `sudo`
+on distributions where that is the default root helper. The three
+helper modules are built from the same tree:
 
     cd kernelbuild
     make M=../drivers/gpu/drm/scheduler modules        # gpu-sched.ko
@@ -126,8 +175,8 @@ Or, end-to-end (after building the module):
     ./install.sh           # interactive, asks to reboot at the end
     ./install.sh --reboot  # install and reboot without asking
 
-Both scripts prefer `doas` (as configured on the reference system) and
-fall back to `sudo`.
+The install scripts detect `doas`/`sudo` automatically: `doas` is used
+when present, otherwise `sudo`.
 
 ### 3. Firmware
 
@@ -203,16 +252,41 @@ configuration, and regenerates the module dependency database.
 
 Screen-update stalls were traced to the schedutil CPU governor, which
 hopped between ~400 MHz and the max rates while the compositor ran. Both
-CPU clusters are switched to the `performance` governor at boot by
-`/etc/local.d/gpu-cpu-perf.start` (OpenRC `local` service):
+CPU clusters are switched to the `performance` governor at boot. The same
+one-liner applies everywhere; only the persistence differs per init
+system:
 
-    #!/bin/bash
+The snippet:
+
     for policy in /sys/devices/system/cpu/cpufreq/policy*; do
         echo performance > "$policy/scaling_governor" 2>/dev/null
     done
 
-Revert with `echo schedutil > .../scaling_governor` and
-`rc-update del local` if you want battery-oriented behavior instead.
+systemd (Debian, Fedora, Arch, most others) — save as
+`/etc/systemd/system/gpu-cpu-perf.service` (root), then
+`systemctl daemon-reload && systemctl enable --now gpu-cpu-perf`:
+
+    [Unit]
+    Description=Set the CPU performance governor for the compositor
+
+    [Service]
+    Type=oneshot
+    ExecStart=/bin/bash -c 'for p in /sys/devices/system/cpu/cpufreq/policy*; do echo performance > "$p/scaling_governor"; done'
+
+    [Install]
+    WantedBy=multi-user.target
+
+OpenRC (Gentoo, Artix) — write the loop into
+`/etc/local.d/gpu-cpu-perf.start` (remember
+`chmod +x /etc/local.d/gpu-cpu-perf.start`) and ensure the `local` service
+is enabled (`rc-update add local default`).
+
+runit (Void) — put the loop into `/etc/rc.local`; Void runs it from its
+runit rc-local job at boot.
+
+To revert at runtime: `echo schedutil > .../scaling_governor` for each
+policy, and disable/remove the persistence piece above if you want
+battery-oriented behavior instead.
 
 ## Troubleshooting
 
