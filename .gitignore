@@ -1,16 +1,32 @@
-# Build artifacts
+# build artifacts
 *.o
+*.a
+*.so
+*.so.*
 *.ko
 *.mod
 *.mod.c
-modules.order
+*.cmd
+*.d
+.tmp_versions/
 Module.symvers
-.*.cmd
-.tmp/
+modules.order
 
-# Local build/run artifacts (created by install.sh / builds on the target)
+# build dirs
+build/
+out/
+builddir/
+_obj/
+
+# meson/ninja
+meson-logs/
+meson-private/
+meson-info/
+compile_commands.json
+
+# misc
+*.log
+*.swp
+*~
+.DS_Store
 backup/
-*.fw
-
-# Worklogs - kept locally, not published
-REPORT-*.md
