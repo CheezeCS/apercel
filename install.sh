@@ -193,9 +193,17 @@ memory_script_body() {
 # - create zram swap (zstd) when absent
 # - prioritise zram over file swap
 # - kernel knobs friendly to compressed swap
-MEM_BYTES=4294967296   # 4 GiB zram volume.
+MEM_BYTES=8589934592   # 8 GiB zram volume (zstd ~5x on this workload: ~1.5-3 GiB
+                       # resident footprint; enough to hold a 6+ GiB application
+                       # without touching the slower UFS-backed file swap).
 
 modprobe zram 2>/dev/null || true
+if [ ! -e /dev/zram0 ]; then
+    if [ -e /sys/class/zram-control ]; then
+        doas sh -c 'cat /sys/class/zram-control/hot_add' >/dev/null 2>&1 || \
+            sh -c 'cat /sys/class/zram-control/hot_add' >/dev/null 2>&1
+    fi
+fi
 if [ -e /dev/zram0 ] && [ "$(cat /sys/block/zram0/disksize 2>/dev/null)" = "0" ]; then
     echo "$MEM_BYTES" > /sys/block/zram0/disksize
     mkswap /dev/zram0
@@ -204,6 +212,7 @@ fi
 
 sysctl -w vm.swappiness=100 >/dev/null 2>&1
 sysctl -w vm.page-cluster=0 >/dev/null 2>&1
+sysctl -w vm.watermark_scale_factor=125 >/dev/null 2>&1
 APEX_MEM
 }
 
