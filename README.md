@@ -51,7 +51,7 @@ the reference install ran on Gentoo aarch64, sway compositor):
 | waybar                           | works                     | status bar                                           |
 | Helium browser (Chromium-based)  | works                     | GPU accelerated                                      |
 | Mindustry                        | works                     | 45–50 fps in a live game                             |
-| Factorio Space Age               | runs                      | ~22 fps windowed, ~16 fullscreen (see below)          |
+| Factorio Space Age               | runs                      | ~55 fps windowed (half-res data textures, see below)  |
 | Vesktop (Electron, Discord)      | does not start            | no workaround found yet                               |
 
 Factorio performance notes (all measured with `--benchmark-graphics`):
@@ -63,6 +63,15 @@ Factorio performance notes (all measured with `--benchmark-graphics`):
 - the frame is capped by a fixed ~40 ms present/sync cost of the GPU
   submission path (measured identical at 128x128 and 1024x600 window),
   texture resolution and window size change it little;
+- **half-resolution game textures**: all `data/**.png` game assets were
+  downscaled to 50% in each dimension with nearest-neighbor (Pillow;
+  ImageMagick is not installed; the `core/graphics/color_luts/`,
+  `space-age/graphics/lut/` 16x16 3D LUTs and one unreadable
+  `core/graphics/arrows/tip-arrow.png` are kept at original size — the
+  LUTs must stay 16x16). Data files shrank 4.3 GB -> 2.5 GB and Factorio
+  went from ~22 fps windowed to **~55 fps** (~3.5x). Prototype declares
+  still match (no load errors except two harmless `sprite rectangle`
+  warnings). To revert: `cp -a ~/factorio-data-original-backup/. ~/factorio/data/`.
 - `mesa_gl_thread=true` (drirc option, enabled by the install via
   `~/.config/drirc`/`$XDG_CONFIG_HOME/drirc` or a per-game env var)
   moves GL submission off the main thread: +5 fps (16 → ~22); it also
