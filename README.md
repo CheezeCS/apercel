@@ -356,6 +356,19 @@ Common problems and fixes, in the order they typically appear:
   governor fix above) — this is compositor latency caused by CPU frequency
   hops, not the GPU.
 
+**Factorio with texture streaming shows black squares / silhouettes**
+- The GPU's GL limit here is `GL_MAX_TEXTURE_SIZE = 4096` (the Vulkan
+  device reports `maxImageDimension2D = 4096`; zink mirrors it), while
+  Factorio's streamed atlas defaults to a physical page of `8192x4096`.
+  Every streamed-page allocation then fails with
+  `[OpenGL]: Error INVALID_VALUE`, each frame afterwards logs
+  `INVALID_OPERATION`, and un-streamed sprites render as black shapes.
+- Fix: cap the streamed page budget to the 32 MB variant, which Factorio
+  lays out as a single `4096x4096` texture. In
+  `~/factorio/config/config.ini` under `[graphics]` set
+  `streamed-atlas-physical-vram-size=32`.
+- Alternative (more RAM, zero artifacts): `texture-streaming=false`.
+
 **`cma_alloc timeout` messages on the console**
 - They come from the display subsystem (sunxi DE), not from the GPU stack;
   known and harmless in the tested configuration.
