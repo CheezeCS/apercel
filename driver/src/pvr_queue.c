@@ -883,8 +883,20 @@ pvr_queue_timedout_job(struct drm_sched_job *s_job)
 	struct pvr_job *job;
 	u32 job_count = 0;
 
-	if (dma_fence_is_signaled(s_job->s_fence->parent))
+	if (dma_fence_is_signaled(s_job->s_fence->parent)) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 17, 0)
 		return DRM_GPU_SCHED_STAT_NO_HANG;
+#else
+		/* No NO_HANG status before 6.17. The core took the job off the
+		 * pending list before calling us; put it back (as the newer core
+		 * does for NO_HANG) so the normal cleanup path frees it.
+		 */
+		spin_lock(&sched->job_list_lock);
+		list_add(&s_job->list, &sched->pending_list);
+		spin_unlock(&sched->job_list_lock);
+		return DRM_GPU_SCHED_STAT_NOMINAL;
+#endif
+	}
 
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(6, 0, 0))
 	dev_err(sched->dev, "Job timeout\n");
