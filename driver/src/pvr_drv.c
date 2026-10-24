@@ -1401,6 +1401,12 @@ static struct drm_driver pvr_drm_driver = {
 
 	.name = PVR_DRIVER_NAME,
 	.desc = PVR_DRIVER_DESC,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 14, 0)
+	/* Removed from struct drm_driver in 6.14; older cores still copy it
+	 * out in DRM_IOCTL_VERSION and WARN when it is NULL.
+	 */
+	.date = "20230904",
+#endif
 	.major = PVR_DRIVER_MAJOR,
 	.minor = PVR_DRIVER_MINOR,
 	.patchlevel = PVR_DRIVER_PATCHLEVEL,
