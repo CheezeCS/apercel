@@ -45,6 +45,7 @@ apercel-y := \
 	src/pvr_device.o \
 	src/pvr_device_info.o \
 	src/pvr_drv.o \
+	src/pvr_dump.o \
 	src/pvr_free_list.o \
 	src/pvr_fw.o \
 	src/pvr_fw_meta.o \
