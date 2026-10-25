@@ -25,7 +25,7 @@ Also tested on an **Orange Pi Zero 3W** (4 GB, Armbian trixie, vendor kernel
 probes and clocks the GPU at 1008 MHz, Vulkan compute and WSI work, sway
 composites on the GPU, and Electron/Vesktop run with GPU acceleration. An
 Armbian integration for that board (kernel config, image build) lives in
-https://github.com/CheezeCS/a733-opengpu.
+https://github.com/CheezeCS/armbian-a733-gpu.
 
 What this provides:
 
@@ -217,7 +217,7 @@ in `.config` does not stick (`olddefconfig` drops the value) and the apercel
 link fails with undefined `drm_sched_*` / `drm_exec_*` / `drm_gem_shmem_*`
 symbols. Give them a prompt in `drivers/gpu/drm/Kconfig` first (a
 `tristate "..."` line and `default m`), as done by kernel patch 0011 in
-https://github.com/CheezeCS/a733-opengpu. When building apercel against a
+https://github.com/CheezeCS/armbian-a733-gpu. When building apercel against a
 tree whose `Module.symvers` is already read by kbuild, pass
 `KBUILD_EXTRA_SYMBOLS=` (empty) on the make command line, or modpost sees
 every exported symbol twice.
