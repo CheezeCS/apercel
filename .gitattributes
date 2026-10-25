@@ -1,0 +1,4 @@
+# Everything here is built or run on Linux: keep LF line endings in every
+# checkout, Windows included (CRLF breaks the shell scripts and the patches).
+* text=auto eol=lf
+*.patch text eol=lf -whitespace
