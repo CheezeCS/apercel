@@ -20,6 +20,13 @@ boards, but this is not proven yet.
 **Testers are welcome: if you have another A733 board, please try it and
 report your results.**
 
+Also tested on an **Orange Pi Zero 3W** (4 GB, Armbian trixie, vendor kernel
+6.6.98-sun60iw2, open firmware 1.1.OS@6976702, Mesa 26.3 patch): the driver
+probes and clocks the GPU at 1008 MHz, Vulkan compute and WSI work, sway
+composites on the GPU, and Electron/Vesktop run with GPU acceleration. An
+Armbian integration for that board (kernel config, image build) lives in
+https://github.com/CheezeCS/a733-opengpu.
+
 What this provides:
 
 - An open-source kernel DRM driver ("apercel") built from the Mesa PowerVR
@@ -27,7 +34,8 @@ What this provides:
   stack is not required on the system.
 - A Mesa userspace stack covering Vulkan (the `imagination` Vulkan driver)
   with zink for OpenGL, maintained in this repository as a patch against
-  vanilla mesa-26.1.8.
+  vanilla mesa-26.1.8, plus a port to mesa-26.3.0-rc2 that brings
+  VK_EXT_transform_feedback and with it OpenGL 3.2 / OpenGL ES 3.1 via zink.
 - Frequency/thermal handling for the GPU: the driver brings the GPU to its
   maximum documented clock (1.008 GHz from the device tree OPP table) on
   every power-up and throttles to 600 MHz at high temperature.
@@ -52,7 +60,7 @@ the reference install ran on Gentoo aarch64, sway compositor):
 | Helium browser (Chromium-based)  | works                     | GPU accelerated                                      |
 | Mindustry                        | works                     | 45–50 fps in a live game                             |
 | Factorio Space Age               | runs                      | ~55 fps windowed (half-res data textures, see below)  |
-| Vesktop (Electron, Discord)      | does not start            | no workaround found yet                               |
+| Vesktop (Electron, Discord)      | works with Mesa 26.3      | see troubleshooting (Mesa 26.1.8: no GPU, see below)  |
 
 Factorio performance notes (all measured with `--benchmark-graphics`):
 
@@ -138,6 +146,20 @@ Debian / Ubuntu (names may vary slightly between releases):
         flex bison pkg-config zlib1g-dev libdrm-dev libglslang-dev \
         libclc-dev libvulkan-dev
 
+Debian 13 (trixie) has no system `mesa_clc` and no unversioned `libclc-dev`;
+build the compiler in-tree with LLVM 19 instead (`-Dllvm=enabled
+-Dmesa-clc=enabled` in step 4, and `PATH=/usr/lib/llvm-19/bin:$PATH`):
+
+    sudo apt install build-essential meson ninja-build python3 python3-mako \
+        python3-yaml flex bison pkg-config zlib1g-dev libzstd-dev libexpat1-dev \
+        libdrm-dev libvulkan-dev clang libclang-cpp-dev libclang-19-dev \
+        llvm-19-dev libllvmspirvlib-19-dev spirv-tools \
+        libwayland-dev libwayland-egl-backend-dev wayland-protocols libudev-dev \
+        libx11-dev libxext-dev libxfixes-dev libx11-xcb-dev libxcb1-dev \
+        libxrandr-dev libxcb-glx0-dev libxcb-dri3-dev libxcb-present-dev \
+        libxcb-shm0-dev libxcb-randr0-dev libxcb-sync-dev libxshmfence-dev \
+        libxxf86vm-dev
+
 Fedora:
 
     sudo dnf install -y gcc make meson ninja-build python3 python3-mako \
@@ -162,9 +184,10 @@ Gentoo:
         llvm-runtimes/libclc media-libs/vulkan-headers
 
 (For `-Dmesa-clc=system` a recent system `glslang` and `libclc` are
-required; on older releases either upgrade them, or configure Mesa with
-`-Dmesa-clc=builtin` instead, which builds the bundled compiler and needs
-no extra system dependency.)
+required. Without them, build the bundled compiler with
+`-Dllvm=enabled -Dmesa-clc=enabled` as shown for Debian trixie; Mesa 26.1.8
+accepts only `enabled`, `system` or `auto` for `mesa-clc`. The PowerVR driver
+always needs mesa-clc: it compiles its load-op shaders at build time.)
 
 ### 1. Kernel and helpers
 
@@ -188,6 +211,17 @@ helper modules are built from the same tree:
 they must expose `drm_sched_*`, `drm_gem_shmem_*` and `drm_exec_*`
 exported symbols.)
 
+In the Orange Pi vendor tree `DRM_SCHED`, `DRM_EXEC` and
+`DRM_GEM_SHMEM_HELPER` are tristates without a prompt, so setting them to `m`
+in `.config` does not stick (`olddefconfig` drops the value) and the apercel
+link fails with undefined `drm_sched_*` / `drm_exec_*` / `drm_gem_shmem_*`
+symbols. Give them a prompt in `drivers/gpu/drm/Kconfig` first (a
+`tristate "..."` line and `default m`), as done by kernel patch 0011 in
+https://github.com/CheezeCS/a733-opengpu. When building apercel against a
+tree whose `Module.symvers` is already read by kbuild, pass
+`KBUILD_EXTRA_SYMBOLS=` (empty) on the make command line, or modpost sees
+every exported symbol twice.
+
 ### 2. The apercel module
 
     cd /path/to/apercel            # this repository
@@ -210,18 +244,29 @@ with BVNC 36.56.104.183 the expected file is:
 
     /lib/firmware/apercel/rogue_36.56.104.183_v1.fw
 
-The firmware binary is not redistributed in this repository (proprietary
-distribution terms). Current sources:
+The firmware binary is not redistributed in this repository. Imagination
+publishes an open-source build for this exact BVNC in its firmware repository
+(branch `powervr`), linked from https://docs.mesa3d.org/drivers/powervr.html:
 
-- Bespoke images for 36.56.104.183 ship with the Allwinner BSP:
-  copy the file from the vendor firmware directory.
-- Upstream `linux-firmware` already carries a BXM-4-64 image but for
-  a different BVNC (36.52.104.182); it is useful for cross-checks but is
-  not a drop-in replacement for 36.56.104.183. When a matching binary
-  lands upstream, copy it into `/lib/firmware/apercel/` under the name
-  above and everything just works.
+    doas install -d /lib/firmware/apercel
+    doas curl -fL -o /lib/firmware/apercel/rogue_36.56.104.183_v1.fw \
+      https://gitlab.freedesktop.org/imagination/linux-firmware/-/raw/8a58f81883f7be458daa34e418cc4079f995b279/powervr/rogue_36.56.104.183_v1.fw
+    echo "1db1c399c17401d1f79d46c880db81c724d748c784d4639433b076aba2f9c0d2  /lib/firmware/apercel/rogue_36.56.104.183_v1.fw" | sha256sum -c
+
+(firmware version 1.1.OS@6976702; the default branch of that repository is
+`powervr`, not `main`). Do not use the `rgx.fw.36.56.104.183` blob from the
+vendor BSP packages: it is a `pvrsrvkm` build (fw_info version 2, no
+open-source flag) and the driver rejects it with
+`Unsupported fw info version 2`.
 
 ### 4. Mesa userspace
+
+Two patches are provided: `mesa/apercel-mesa.patch` for mesa-26.1.8 and
+`mesa/apercel-mesa-26.3.0-rc2.patch` for mesa-26.3.0-rc2 (recommended: it
+adds VK_EXT_transform_feedback, so zink reaches OpenGL 3.2 / ES 3.1; see
+`mesa/README.txt`). The commands are the same apart from the tree and the
+patch file. On Debian trixie replace `-Dllvm=disabled -Dmesa-clc=system`
+with `-Dllvm=enabled -Dmesa-clc=enabled` (see step 0).
 
 From a clean vanilla mesa-26.1.8 source tree:
 
@@ -398,9 +443,16 @@ Common problems and fixes, in the order they typically appear:
 - They come from the display subsystem (sunxi DE), not from the GPU stack;
   known and harmless in the tested configuration.
 
-**Vesktop does not start**
-- Not solved yet; Electron on this configuration refuses to run on the
-  PowerVR/zink stack. Progress/debugging notes welcome.
+**Vesktop / Electron / Chromium has no GPU acceleration (Mesa 26.1.8)**
+- Chromium's GPU process (Electron 45 / Chromium 152) requires an OpenGL ES
+  3.0 context and no longer falls back to ES 2.0. With Mesa 26.1.8 zink only
+  reaches ES 2.0 (no VK_EXT_transform_feedback in the PowerVR driver), so the
+  GPU process exits ("ES version fallback is disabled", then "GPU access is
+  disabled due to frequent crashes") and the app renders in software.
+- Fix: the Mesa 26.3 patch (zink reaches ES 3.1; Vesktop 1.6.8 tested under
+  sway on an Orange Pi Zero 3W). With 26.1.8, start the app with
+  `--use-angle=vulkan` instead: ANGLE then renders on the PowerVR Vulkan
+  driver directly and emulates transform feedback itself.
 
 **A desktop GL application complains about OpenGL features/renderers**
 - Desktop OpenGL on this hardware is provided by zink (GL translated to
