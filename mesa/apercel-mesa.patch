@@ -1,3 +1,18 @@
+diff -urN mesa-26.1.8/include/drm-uapi/pvr_drm.h apercel-mesa/include/drm-uapi/pvr_drm.h
+--- mesa-26.1.8/include/drm-uapi/pvr_drm.h
++++ apercel-mesa/include/drm-uapi/pvr_drm.h
+@@ -536,6 +536,11 @@
+ #define DRM_PVR_BO_BYPASS_DEVICE_CACHE _BITULL(0)
+ #define DRM_PVR_BO_PM_FW_PROTECT _BITULL(1)
+ #define DRM_PVR_BO_ALLOW_CPU_USERSPACE_ACCESS _BITULL(2)
++/* apercel: the patch below uses DRM_PVR_BO_CPU_CACHED, which neither this
++ * header nor the apercel kernel module defines (the module accepts BO flag
++ * bits 0-2 only). Keep it a no-op: HOST_CACHED memory stays write-combined.
++ */
++#define DRM_PVR_BO_CPU_CACHED 0
+ /* Bits 3..63 are reserved. */
+ 
+ #define DRM_PVR_BO_FLAGS_MASK (DRM_PVR_BO_BYPASS_DEVICE_CACHE | DRM_PVR_BO_PM_FW_PROTECT | \
 diff -urN mesa-26.1.8/src/imagination/common/pvr_limits.h apercel-mesa/src/imagination/common/pvr_limits.h
 --- mesa-26.1.8/src/imagination/common/pvr_limits.h	2026-08-19 18:40:15.000000000 +0000
 +++ apercel-mesa/src/imagination/common/pvr_limits.h	2026-10-16 19:55:39.781860152 +0000
