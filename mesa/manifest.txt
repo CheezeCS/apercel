@@ -39,3 +39,11 @@ pvr_job_compute.h         4  compute job declarations refresh
 pvr_winsys.h              4  renderer identity: PVR_DRM_DRIVER_NAME set to
                              "apercel" to match the open-source kernel
                              driver ("powevr" upstream)
+include/drm-uapi/pvr_drm.h
+                          5  DRM_PVR_BO_CPU_CACHED defined as 0 (the patch uses
+                             it; neither vanilla Mesa nor the apercel kernel
+                             module defines it)
+
+apercel-mesa-26.3.0-rc2.patch carries the same changes on vanilla
+mesa-26.3.0-rc2 (see README.txt for how the port was made); with 26.3 the
+PowerVR Vulkan driver also gains VK_EXT_transform_feedback from upstream.
